@@ -1,45 +1,63 @@
-use std::convert::Infallible;
-use std::net::SocketAddr;
+extern crate diesel;
+extern crate dotenv;
+use crate::user::UserBuilder;
+use crate::user::User;
 
-use http_body_util::Full;
-use hyper::body::Bytes;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper::{Request, Response};
-use hyper_util::rt::TokioIo;
-use tokio::net::TcpListener;
+pub mod schema;
+pub mod user;
+pub mod database;
 
-// A simple hello world handler
-async fn hello(_: Request<hyper::body::Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
-    Ok(Response::new(Full::new(Bytes::from("Hello, World!"))))
-}
+fn main() {
+    // Establish a connection to the database
+    let mut connection = database::establish_connection();
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("Listening on http://{}", addr);
+    // Example usage
+    let first_user = UserBuilder::new()
+        .first_name("Robin")
+        .last_name("Bakker")
+        .email("robin@bakeable.nl")
+        .active(true)
+        .build();
 
-    // We create a TcpListener and bind it to 127.0.0.1:3000
-    let listener = TcpListener::bind(addr).await?;
+    match User::create(&mut connection, first_user) {
+        Ok(user) => println!("User created: {:?}", user),
+        Err(err) => println!("Error creating user: {}", err),
+    }
 
-    // We start a loop to continuously accept incoming connections
-    loop {
-        let (stream, _) = listener.accept().await?;
+    // Example usage
+    let mut second_user = UserBuilder::new()
+        .first_name("Robin")
+        .last_name("Bakker")
+        .email("robin@bakeable.nl")
+        .active(true)
+        .build();
 
-        // Use an adapter to access something implementing `tokio::io` traits as if they implement
-        // `hyper::rt` IO traits.
-        let io = TokioIo::new(stream);
+    match User::create(&mut connection, second_user.clone()) {
+        Ok(user) => println!("User created: {:?}", user),
+        Err(err) => println!("Error creating user: {}", err),
+    }
 
-        // Spawn a tokio task to serve multiple connections concurrently
-        tokio::task::spawn(async move {
-            // Finally, we bind the incoming connection to our `hello` service
-            if let Err(err) = http1::Builder::new()
-                // `service_fn` converts our function in a `Service`
-                .serve_connection(io, service_fn(hello))
-                .await
-            {
-                eprintln!("Error serving connection: {:?}", err);
-            }
-        });
+
+    match User::read(&mut connection, 1) {
+        Ok(user) => println!("User read: {:?}", user),
+        Err(err) => println!("Error reading user: {}", err),
+    }
+
+    // Update the user
+    second_user.active = false;
+    match User::update(&mut connection, 1, second_user) {
+        Ok(user) => println!("User updated: {:?}", user),
+        Err(err) => println!("Error updating user: {}", err),
+    }
+
+    // Read the user
+    match User::read(&mut connection, 1) {
+        Ok(user) => println!("User read: {:?}", user),
+        Err(err) => println!("Error reading user: {}", err),
+    }
+
+    match User::delete(&mut connection, 1) {
+        Ok(user) => println!("User deleted: {:?}", user),
+        Err(err) => println!("Error deleting user: {}", err),
     }
 }
